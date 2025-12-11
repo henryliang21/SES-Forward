@@ -1,0 +1,29 @@
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Lambda Configuration
+function_name      = "SESEmailForwarder"
+environment        = "prod"
+lambda_timeout     = 30
+lambda_memory_size = 256
+
+# Email Forwarding Configuration (REQUIRED)
+forward_to_email = "your-email@example.com"
+
+# S3 Configuration (REQUIRED)
+# This should be the bucket where SES stores incoming emails
+ses_email_bucket = "your-ses-email-bucket"
+
+# Optional: S3 prefix for emails (must match the prefix configured in SES receipt rule)
+# Leave empty if no prefix is used
+ses_s3_prefix = ""
+
+# CloudWatch Logs Configuration
+log_retention_days = 14
+
+# Tags
+default_tags = {
+  Project   = "SES-Email-Forwarder"
+  ManagedBy = "Terraform"
+  Owner     = "YourName"
+}

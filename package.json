@@ -1,0 +1,26 @@
+{
+  "name": "ses-email-forwarder",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to forward SES received emails to a designated email address",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "ses",
+    "email",
+    "forwarding"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
+    "@aws-sdk/client-ses": "^3.705.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
