@@ -64,12 +64,13 @@ export const handler = async (event) => {
       // Parse the original email headers
       const originalFrom = sesMessage.mail.commonHeaders.from?.[0] || 'unknown';
       const originalTo = sesMessage.mail.commonHeaders.to || [];
+      const fromAddress = sesMessage.mail.commonHeaders.to || [];
       const originalSubject = sesMessage.mail.commonHeaders.subject || '(No Subject)';
 
       console.log(`Original from: ${originalFrom}`);
       console.log(`Original to: ${originalTo.join(', ')}`);
       console.log(`Original subject: ${originalSubject}`);
-
+      console.log(`ForwardToEmail: ${forwardToEmail}`);
       // Modify the email to add forwarding information
       let forwardedEmail;
       try {
@@ -77,7 +78,9 @@ export const handler = async (event) => {
           originalFrom,
           originalTo,
           forwardToEmail,
+          fromAddress,
         });
+        console.log(`forwardedEmail: ${forwardedEmail}`);
       } catch (modifyError) {
         console.error(`Failed to modify email ${messageId}:`, modifyError);
         throw new Error(`Email modification failed: ${modifyError.message}`);
@@ -86,6 +89,8 @@ export const handler = async (event) => {
       // Send the forwarded email
       try {
         const sendRawEmailCommand = new SendRawEmailCommand({
+          Source: fromAddress,
+          Destinations: [forwardToEmail],
           RawMessage: {
             Data: Buffer.from(forwardedEmail),
           },
@@ -139,55 +144,53 @@ async function streamToString(stream) {
 /**
  * Modify the email to add forwarding information and change recipient
  */
-function modifyEmail(emailContent, { originalFrom, originalTo, forwardToEmail }) {
+function modifyEmail(emailContent, { originalFrom, originalTo, forwardToEmail, fromAddress }) {
   // Split headers and body
   const emailParts = emailContent.split('\r\n\r\n');
   const headers = emailParts[0];
   const body = emailParts.slice(1).join('\r\n\r\n');
 
-  // Parse headers
-  const headerLines = headers.split('\r\n');
+  // Group folded header lines together
+  const rawLines = headers.split('\r\n');
+  const headerEntries = [];
+  for (const line of rawLines) {
+    if (/^[ \t]/.test(line) && headerEntries.length > 0) {
+      headerEntries[headerEntries.length - 1] += '\r\n' + line;
+    } else {
+      headerEntries.push(line);
+    }
+  }
+
+  // Drop these headers — we will rewrite or let SES regenerate them
+  const dropHeader = /^(Return-Path|Sender|From|To|Reply-To|DKIM-Signature|DomainKey-Signature|Authentication-Results|ARC-Seal|ARC-Message-Signature|ARC-Authentication-Results|Received-SPF|X-SES-[^:]+):/i;
+
   const modifiedHeaders = [];
-  let replyToHeaderFound = false;
-
-  for (const line of headerLines) {
-    // Skip Return-Path, Sender, Reply-To, and To headers - we'll add our own
-    if (line.match(/^Return-Path:/i)) {
-      continue;
-    }
-    if (line.match(/^Sender:/i)) {
-      continue;
-    }
-    if (line.match(/^Reply-To:/i)) {
-      replyToHeaderFound = true;
-      continue;
-    }
-    if (line.match(/^To:/i)) {
-      continue;
-    }
-    if (line.match(/^From:/i)) {
-      modifiedHeaders.push(line);
-      continue;
-    }
-
-    // Keep all other headers
-    modifiedHeaders.push(line);
+  for (const entry of headerEntries) {
+    if (dropHeader.test(entry)) continue;
+    modifiedHeaders.push(entry);
   }
 
-  // Add forwarding headers
-  if (!replyToHeaderFound) {
-    modifiedHeaders.push(`Reply-To: ${originalFrom}`);
-  }
+  // Build a friendly From that keeps the original sender's display name
+  // but uses your verified address as the actual mailbox.
+  const displayName = extractDisplayName(originalFrom) || extractEmail(originalFrom) || 'Forwarded';
+  const safeDisplay = displayName.replace(/"/g, '');
+  const newFrom = `"${safeDisplay} (via Forwarder)" <${fromAddress}>`;
 
-  // Add original recipient information in X-headers
+  modifiedHeaders.push(`From: ${newFrom}`);
+  modifiedHeaders.push(`Reply-To: ${originalFrom}`);
+  modifiedHeaders.push(`To: ${forwardToEmail}`);
   modifiedHeaders.push(`X-Original-To: ${originalTo.join(', ')}`);
   modifiedHeaders.push(`X-Forwarded-By: SES-Email-Forwarder`);
 
-  // Set the new recipient
-  modifiedHeaders.push(`To: ${forwardToEmail}`);
+  return modifiedHeaders.join('\r\n') + '\r\n\r\n' + body;
+}
 
-  // Reconstruct the email
-  const modifiedEmail = modifiedHeaders.join('\r\n') + '\r\n\r\n' + body;
+function extractDisplayName(addr) {
+  const m = addr.match(/^\s*"?([^"<]+?)"?\s*<.+>\s*$/);
+  return m ? m[1].trim() : null;
+}
 
-  return modifiedEmail;
+function extractEmail(addr) {
+  const m = addr.match(/<([^>]+)>/);
+  return m ? m[1] : addr.trim();
 }
