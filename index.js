@@ -64,7 +64,11 @@ export const handler = async (event) => {
       // Parse the original email headers
       const originalFrom = sesMessage.mail.commonHeaders.from?.[0] || 'unknown';
       const originalTo = sesMessage.mail.commonHeaders.to || [];
-      const fromAddress = sesMessage.mail.commonHeaders.to || [];
+      // Use the actual delivered-to address (always a bare address) as the
+      // sending identity; the To header may contain a display name that SES
+      // rejects as a Source (e.g. `"name" <addr>` -> InvalidParameterValue).
+      const fromAddress =
+        sesMessage.receipt?.recipients?.[0] || extractEmail(originalTo[0] || '');
       const originalSubject = sesMessage.mail.commonHeaders.subject || '(No Subject)';
 
       console.log(`Original from: ${originalFrom}`);
